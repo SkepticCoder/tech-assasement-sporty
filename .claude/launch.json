@@ -1,0 +1,17 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "Docker Compose (Infrastructure)",
+      "runtimeExecutable": "docker",
+      "runtimeArgs": ["compose", "up", "-d"],
+      "port": 6379
+    },
+    {
+      "name": "Bet Settlement Service (Spring Boot)",
+      "runtimeExecutable": "./gradlew",
+      "runtimeArgs": ["bootRun", "--args='--spring.profiles.active=local'"],
+      "port": 8080
+    }
+  ]
+}

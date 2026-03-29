@@ -1,0 +1,13 @@
+spring:
+  data:
+    redis:
+      host: localhost
+      port: 6379
+
+rocketmq:
+  enabled: false
+  name-server: localhost:9876
+
+logging:
+  level:
+    com.sporty.betting: DEBUG
