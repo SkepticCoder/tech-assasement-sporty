@@ -15,6 +15,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Load environment variables from .env
+        run: |
+          if [ -f .env ]; then
+            cat .env >> $GITHUB_ENV
+            echo "Loaded .env file"
+          else
+            echo "⚠️ .env file not found"
+          fi
+
       - name: Build
         run: ./gradlew build -x test
 
@@ -26,6 +35,15 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+
+      - name: Load environment variables from .env
+        run: |
+          if [ -f .env ]; then
+            cat .env >> $GITHUB_ENV
+            echo "Loaded .env file"
+          else
+            echo "⚠️ .env file not found"
+          fi
 
       - name: Run unit tests
         run: ./gradlew test --tests "com.sporty.betting.unit.*"
@@ -46,6 +64,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Load environment variables from .env
+        run: |
+          if [ -f .env ]; then
+            cat .env >> $GITHUB_ENV
+            echo "Loaded .env file"
+          else
+            echo "⚠️ .env file not found"
+          fi
+
       - name: Run integration tests
         run: ./gradlew test --tests "com.sporty.betting.integration.*"
 
@@ -65,6 +92,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Load environment variables from .env
+        run: |
+          if [ -f .env ]; then
+            cat .env >> $GITHUB_ENV
+            echo "Loaded .env file"
+          else
+            echo "⚠️ .env file not found"
+          fi
+
       - name: Run acceptance tests
         run: ./gradlew test --tests "com.sporty.betting.acceptance.*"
 
@@ -83,6 +119,15 @@ jobs:
     needs: build
     steps:
       - uses: actions/checkout@v4
+
+      - name: Load environment variables from .env
+        run: |
+          if [ -f .env ]; then
+            cat .env >> $GITHUB_ENV
+            echo "Loaded .env file"
+          else
+            echo "⚠️ .env file not found"
+          fi
 
       - name: Set up JDK 21
         uses: actions/setup-java@v4
@@ -143,6 +188,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Load environment variables from .env
+        run: |
+          if [ -f .env ]; then
+            cat .env >> $GITHUB_ENV
+            echo "Loaded .env file"
+          else
+            echo "⚠️ .env file not found"
+          fi
+
       - name: Initialize CodeQL
         uses: github/codeql-action/init@v3
         with:
@@ -169,6 +223,15 @@ jobs:
     if: github.ref == 'refs/heads/main'
     steps:
       - uses: actions/checkout@v4
+
+      - name: Load environment variables from .env
+        run: |
+          if [ -f .env ]; then
+            cat .env >> $GITHUB_ENV
+            echo "Loaded .env file"
+          else
+            echo "⚠️ .env file not found"
+          fi
 
       - name: Set up JDK 21
         uses: actions/setup-java@v4
@@ -222,6 +285,15 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+
+      - name: Load environment variables from .env
+        run: |
+          if [ -f .env ]; then
+            cat .env >> $GITHUB_ENV
+            echo "Loaded .env file"
+          else
+            echo "⚠️ .env file not found"
+          fi
 
       - name: Build native image
         run: ./gradlew nativeCompile
