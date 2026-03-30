@@ -118,6 +118,19 @@ tasks.named("compileJava") {
     dependsOn("openApiGenerate")
 }
 
+graalvmNative {
+    binaries {
+        named("main") {
+            buildArgs.add("-DOTEL_SERVICE_NAME=betting-settlement")
+            buildArgs.add("-DOTEL_TRACES_EXPORTER=otlp")
+            buildArgs.add("-DOTEL_METRICS_EXPORTER=otlp")
+            buildArgs.add("-DOTEL_LOGS_EXPORTER=otlp")
+            buildArgs.add("-DOTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318")
+            buildArgs.add("-DOTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf")
+        }
+    }
+}
+
 tasks.withType<Test> {
     useJUnitPlatform()
     jvmArgs("-javaagent:${mockitoAgent.asPath}")

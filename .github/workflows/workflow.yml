@@ -28,165 +28,85 @@ env:
 
 jobs:
   # ------------------------------------------------------------------
-  # Build the Docker image containing the compiled application
-  # ------------------------------------------------------------------
-  docker-build:
-    name: Build Docker image
-    runs-on: ubuntu-latest
-    outputs:
-      version: ${{ steps.version.outputs.version }}
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-
-      - name: Determine version
-        id: version
-        run: |
-          if [[ $GITHUB_REF == refs/tags/v* ]]; then
-            VERSION=${GITHUB_REF#refs/tags/v}
-          elif [[ ${{ github.event_name }} == 'workflow_dispatch' && -n "${{ github.event.inputs.version }}" ]]; then
-            VERSION=${{ github.event.inputs.version }}
-          else
-            LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "0.0.0")
-            COMMIT_HASH=$(git rev-parse --short HEAD)
-            VERSION="${LATEST_TAG}-${COMMIT_HASH}"
-          fi
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
-          echo "VERSION=$VERSION" >> $GITHUB_ENV
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Build Docker image
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          load: true
-          build-args: |
-            VERSION=${{ steps.version.outputs.version }}
-          tags: |
-            bet-settlement-service:${{ steps.version.outputs.version }}
-            bet-settlement-service:latest
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
-      - name: Save Docker image as artifact
-        run: docker save bet-settlement-service:${{ steps.version.outputs.version }} | gzip > docker-image.tar.gz
-
-      - name: Upload Docker image artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: docker-image
-          path: docker-image.tar.gz
-
-  # ------------------------------------------------------------------
-  # Run tests inside the Docker container (reports are extracted)
+  # Unit Tests
   # ------------------------------------------------------------------
   unit-tests:
     runs-on: ubuntu-latest
-    needs: docker-build
     steps:
-      - name: Download Docker image
-        uses: actions/download-artifact@v4
+      - uses: actions/checkout@v4
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
         with:
-          name: docker-image
-          path: /tmp
-
-      - name: Load Docker image
-        run: docker load < /tmp/docker-image.tar.gz
-
-      - name: Create reports directory
-        run: mkdir -p test-reports/unit
-
+          distribution: temurin
+          java-version: 21
       - name: Run unit tests
-        run: |
-          docker run --rm \
-            -v $(pwd)/test-reports/unit:/app/build/reports/tests \
-            -e DB_PASSWORD=${{ secrets.DB_PASSWORD }} \
-            -e API_KEY=${{ secrets.API_KEY }} \
-            -e DB_URL=${{ vars.DB_URL }} \
-            -e LOG_LEVEL=${{ vars.LOG_LEVEL }} \
-            bet-settlement-service:latest \
-            ./gradlew test --tests "com.sporty.betting.unit.*"
-
+        run: ./gradlew test --tests "com.sporty.betting.unit.*"
+        env:
+          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+          API_KEY: ${{ secrets.API_KEY }}
+          DB_URL: ${{ vars.DB_URL }}
+          LOG_LEVEL: ${{ vars.LOG_LEVEL }}
       - name: Upload test results
         uses: actions/upload-artifact@v4
         if: always()
         with:
           name: unit-test-results
-          path: test-reports/unit
+          path: build/reports/tests/
 
+  # ------------------------------------------------------------------
+  # Integration Tests
+  # ------------------------------------------------------------------
   integration-tests:
     runs-on: ubuntu-latest
-    needs: docker-build
     steps:
-      - name: Download Docker image
-        uses: actions/download-artifact@v4
+      - uses: actions/checkout@v4
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
         with:
-          name: docker-image
-          path: /tmp
-
-      - name: Load Docker image
-        run: docker load < /tmp/docker-image.tar.gz
-
-      - name: Create reports directory
-        run: mkdir -p test-reports/integration
-
+          distribution: temurin
+          java-version: 21
       - name: Run integration tests
-        run: |
-          docker run --rm \
-            -v $(pwd)/test-reports/integration:/app/build/reports/tests \
-            -e DB_PASSWORD=${{ secrets.DB_PASSWORD }} \
-            -e API_KEY=${{ secrets.API_KEY }} \
-            -e DB_URL=${{ vars.DB_URL }} \
-            -e LOG_LEVEL=${{ vars.LOG_LEVEL }} \
-            bet-settlement-service:latest \
-            ./gradlew test --tests "com.sporty.betting.integration.*"
-
+        run: ./gradlew test --tests "com.sporty.betting.integration.*"
+        env:
+          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+          API_KEY: ${{ secrets.API_KEY }}
+          DB_URL: ${{ vars.DB_URL }}
+          LOG_LEVEL: ${{ vars.LOG_LEVEL }}
       - name: Upload test results
         uses: actions/upload-artifact@v4
         if: always()
         with:
           name: integration-test-results
-          path: test-reports/integration
+          path: build/reports/tests/
 
+  # ------------------------------------------------------------------
+  # Acceptance Tests
+  # ------------------------------------------------------------------
   acceptance-tests:
     runs-on: ubuntu-latest
-    needs: docker-build
     steps:
-      - name: Download Docker image
-        uses: actions/download-artifact@v4
+      - uses: actions/checkout@v4
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
         with:
-          name: docker-image
-          path: /tmp
-
-      - name: Load Docker image
-        run: docker load < /tmp/docker-image.tar.gz
-
-      - name: Create reports directory
-        run: mkdir -p test-reports/acceptance
-
+          distribution: temurin
+          java-version: 21
       - name: Run acceptance tests
-        run: |
-          docker run --rm \
-            -v $(pwd)/test-reports/acceptance:/app/build/reports/tests \
-            -e DB_PASSWORD=${{ secrets.DB_PASSWORD }} \
-            -e API_KEY=${{ secrets.API_KEY }} \
-            -e DB_URL=${{ vars.DB_URL }} \
-            -e LOG_LEVEL=${{ vars.LOG_LEVEL }} \
-            bet-settlement-service:latest \
-            ./gradlew test --tests "com.sporty.betting.acceptance.*"
-
+        run: ./gradlew test --tests "com.sporty.betting.acceptance.*"
+        env:
+          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+          API_KEY: ${{ secrets.API_KEY }}
+          DB_URL: ${{ vars.DB_URL }}
+          LOG_LEVEL: ${{ vars.LOG_LEVEL }}
       - name: Upload test results
         uses: actions/upload-artifact@v4
         if: always()
         with:
           name: acceptance-test-results
-          path: test-reports/acceptance
+          path: build/reports/tests/
 
   # ------------------------------------------------------------------
-  # Security scans (dependency, secret, SAST)
+  # Security scans
   # ------------------------------------------------------------------
   dependency-scan:
     name: Dependency vulnerability scan
@@ -270,12 +190,104 @@ jobs:
           category: sast
 
   # ------------------------------------------------------------------
+  # Native compilation (using GraalVM)
+  # ------------------------------------------------------------------
+  native-compile:
+    name: Compile native image
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/graalvm/native-image-community:21-muslib
+    needs:
+      - unit-tests
+      - integration-tests
+      - acceptance-tests
+      - dependency-scan
+      - sast
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Determine version
+        id: version
+        run: |
+          if [[ $GITHUB_REF == refs/tags/v* ]]; then
+            VERSION=${GITHUB_REF#refs/tags/v}
+          elif [[ ${{ github.event_name }} == 'workflow_dispatch' && -n "${{ github.event.inputs.version }}" ]]; then
+            VERSION=${{ github.event.inputs.version }}
+          else
+            LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "0.0.0")
+            COMMIT_HASH=$(git rev-parse --short HEAD)
+            VERSION="${LATEST_TAG}-${COMMIT_HASH}"
+          fi
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+
+      - name: Build native image
+        run: ./gradlew nativeCompile -Pversion=$VERSION
+        env:
+          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+          API_KEY: ${{ secrets.API_KEY }}
+          DB_URL: ${{ vars.DB_URL }}
+
+      - name: Upload native binary artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-image-${{ steps.version.outputs.version }}
+          path: build/native/nativeCompile/
+
+  # ------------------------------------------------------------------
+  # Docker build – uses the pre‑compiled native binary
+  # ------------------------------------------------------------------
+  docker-build:
+    name: Build Docker image
+    runs-on: ubuntu-latest
+    needs: native-compile
+    outputs:
+      version: ${{ needs.native-compile.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download native binary
+        uses: actions/download-artifact@v4
+        with:
+          name: native-image-${{ needs.native-compile.outputs.version }}
+          path: ./native
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          load: true
+          build-args: |
+            VERSION=${{ needs.native-compile.outputs.version }}
+          tags: |
+            bet-settlement-service:${{ needs.native-compile.outputs.version }}
+            bet-settlement-service:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Save Docker image as artifact
+        run: docker save bet-settlement-service:${{ needs.native-compile.outputs.version }} | gzip > docker-image.tar.gz
+
+      - name: Upload Docker image artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: docker-image
+          path: docker-image.tar.gz
+
+  # ------------------------------------------------------------------
   # Docker image vulnerability scan
   # ------------------------------------------------------------------
   docker-image-scan:
     name: Docker image vulnerability scan
     runs-on: ubuntu-latest
-    needs: [unit-tests, integration-tests, acceptance-tests]
+    needs: docker-build
     if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
     steps:
       - name: Download Docker image
@@ -310,45 +322,14 @@ jobs:
           category: docker-image-scan
 
   # ------------------------------------------------------------------
-  # Extract native image from the Docker image (if built)
-  # ------------------------------------------------------------------
-  extract-native:
-    name: Extract native image from Docker image
-    runs-on: ubuntu-latest
-    needs: docker-build
-    if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
-    steps:
-      - name: Download Docker image
-        uses: actions/download-artifact@v4
-        with:
-          name: docker-image
-          path: /tmp
-      - name: Load Docker image
-        run: docker load < /tmp/docker-image.tar.gz
-      - name: Extract native binary
-        run: |
-          docker create --name extract bet-settlement-service:latest
-          docker cp extract:/app/build/native/nativeCompile ./native
-          docker rm extract
-      - name: Upload native image artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: native-image-${{ needs.docker-build.outputs.version }}
-          path: ./native
-
-  # ------------------------------------------------------------------
   # Auto tag creation after merge to main
   # ------------------------------------------------------------------
   create-tag:
     name: Create version tag after merge
     runs-on: ubuntu-latest
     needs:
-      - unit-tests
-      - integration-tests
-      - acceptance-tests
-      - dependency-scan
-      - sast
       - docker-image-scan
+      - native-compile
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     permissions:
       contents: write
@@ -384,7 +365,7 @@ jobs:
     name: Manual release build
     runs-on: ubuntu-latest
     needs:
-      - extract-native
+      - native-compile
     if: github.event_name == 'workflow_dispatch' && github.event.inputs.create_tag == 'true'
     permissions:
       contents: write
@@ -438,7 +419,7 @@ jobs:
     name: Create GitHub Release from tag
     runs-on: ubuntu-latest
     needs:
-      - extract-native
+      - native-compile
     if: startsWith(github.ref, 'refs/tags/v')
     permissions:
       contents: write
