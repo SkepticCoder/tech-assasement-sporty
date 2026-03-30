@@ -1,0 +1,45 @@
+# Same build stage as the original
+FROM eclipse-temurin:21-jdk-alpine AS build
+
+WORKDIR /app
+
+COPY gradle/ gradle/
+COPY gradlew build.gradle.kts settings.gradle.kts gradle/libs.versions.toml ./
+RUN ./gradlew dependencies --no-daemon || true
+
+COPY src/ src/
+RUN ./gradlew bootJar --no-daemon
+
+ARG OTEL_AGENT_VERSION=2.14.0
+ADD https://github.com/open-telemetry/opentelemetry-java-instrumentation/releases/download/v${OTEL_AGENT_VERSION}/opentelemetry-javaagent.jar /opt/opentelemetry-javaagent.jar
+
+# Final stage – debug version
+FROM eclipse-temurin:21-jre-alpine
+
+RUN addgroup -S appgroup && adduser -S appuser -G appgroup
+
+WORKDIR /app
+
+COPY --from=build /app/build/libs/betting-settlement-*.jar app.jar
+COPY --from=build /opt/opentelemetry-javaagent.jar /opt/opentelemetry-javaagent.jar
+
+RUN chown -R appuser:appgroup /app
+
+USER appuser
+
+EXPOSE 8080 5005      # additional port for JDWP
+
+ENV OTEL_SERVICE_NAME=betting-settlement
+ENV OTEL_TRACES_EXPORTER=otlp
+ENV OTEL_METRICS_EXPORTER=otlp
+ENV OTEL_LOGS_EXPORTER=otlp
+ENV OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318
+ENV OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
+
+# JVM options for debug version
+# -XX:+FlightRecorder                enable JFR
+# -XX:StartFlightRecording=...       optional: start a default recording (see below)
+# -agentlib:jdwp=...                 enable JDWP for remote debugging
+ENV JAVA_OPTS="-XX:+FlightRecorder -XX:StartFlightRecording=filename=/tmp/recording.jfr,duration=0,disk=true,maxsize=100m,settings=profile -agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=*:5005"
+
+ENTRYPOINT ["sh", "-c", "java $JAVA_OPTS -javaagent:/opt/opentelemetry-javaagent.jar -Djava.security.egd=file:/dev/./urandom -jar app.jar"]

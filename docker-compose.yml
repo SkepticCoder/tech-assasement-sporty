@@ -1,6 +1,67 @@
 version: "3.8"
 
 services:
+  bet-settlement:
+    build:
+      context: ./          # Path to directory containing Dockerfile
+      dockerfile: Dockerfile  # Optional if the file is named Dockerfile
+    image: myapp:latest       # Optional: tag the built image
+    ports:
+      - "3000:3000"           # Expose app's port
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:29092
+      - ROCKETMQ_NAMESRV_ADDR=rocketmq-namesrv:9876
+    depends_on:
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      rocketmq-namesrv:
+        condition: service_healthy
+      rocketmq-broker:
+        condition: service_healthy
+    volumes:
+      - ./:/app            # Mount source code for development (optional)
+
+  # Development service – only started with profile "dev"
+  bet-settlement-dev:
+    build:
+      context: ./bet-settlement
+      dockerfile: Dockerfile.debug
+    image: bet-settlement:debug
+    profiles:
+      - dev                         # <-- only active when --profile dev is used
+    ports:
+      - "8080:8080"
+      - "5005:5005"                 # JDWP port
+    environment:
+      - OTEL_SERVICE_NAME=bet-settlement
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318
+    volumes:
+      - ./coredumps:/tmp/coredumps
+      - ./logs:/app/logs
+      - ./jfr-recordings:/tmp
+      # Mount source code for live reload (if your app supports it)
+      - ./bet-settlement/src:/app/src
+      - ./bet-settlement/build/libs:/app/build/libs   # optional, for recompiled classes
+    ulimits:
+      core: -1
+    depends_on:
+      redis:
+        condition: service_healthy
+      kafka:
+        condition: service_healthy
+      rocketmq-namesrv:
+        condition: service_healthy
+      rocketmq-broker:
+        condition: service_healthy
+      otel-collector:
+        condition: service_started
+    networks:
+      - default
+
   redis:
     image: redis:${REDIS_VERSION}
     ports:

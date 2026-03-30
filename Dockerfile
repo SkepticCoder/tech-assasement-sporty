@@ -1,16 +1,4 @@
-FROM eclipse-temurin:21-jdk-alpine AS build
-
-WORKDIR /app
-
-COPY gradle/ gradle/
-COPY gradlew build.gradle.kts settings.gradle.kts gradle/libs.versions.toml ./
-RUN ./gradlew dependencies --no-daemon || true
-
-COPY src/ src/
-RUN ./gradlew bootJar --no-daemon
-
-ARG OTEL_AGENT_VERSION=2.14.0
-ADD https://github.com/open-telemetry/opentelemetry-java-instrumentation/releases/download/v${OTEL_AGENT_VERSION}/opentelemetry-javaagent.jar /opt/opentelemetry-javaagent.jar
+# ... (previous stages remain the same)
 
 FROM eclipse-temurin:21-jre-alpine
 
@@ -18,7 +6,7 @@ RUN addgroup -S appgroup && adduser -S appuser -G appgroup
 
 WORKDIR /app
 
-COPY --from=build /app/build/libs/bet-settlement-service-*.jar app.jar
+COPY --from=build /app/build/libs/betting-settlement-*.jar app.jar
 COPY --from=build /opt/opentelemetry-javaagent.jar /opt/opentelemetry-javaagent.jar
 
 RUN chown -R appuser:appgroup /app
@@ -27,11 +15,19 @@ USER appuser
 
 EXPOSE 8080
 
-ENV OTEL_SERVICE_NAME=bet-settlement-service
+ENV OTEL_SERVICE_NAME=betting-settlement
 ENV OTEL_TRACES_EXPORTER=otlp
 ENV OTEL_METRICS_EXPORTER=otlp
 ENV OTEL_LOGS_EXPORTER=otlp
 ENV OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318
 ENV OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
 
-ENTRYPOINT ["java", "-javaagent:/opt/opentelemetry-javaagent.jar", "-Djava.security.egd=file:/dev/./urandom", "-jar", "app.jar"]
+# JVM flags for crash diagnostics:
+# -XX:+HeapDumpOnOutOfMemoryError – generate heap dump when OOM occurs
+# -XX:HeapDumpPath – store heap dumps in the mounted volume
+# -XX:ErrorFile – store JVM error logs (e.g., when native crash happens)
+# -XX:+CreateCoredumpOnCrash – ensure a core dump is created for native crashes (may require ulimits)
+# -Djava.io.tmpdir – set temporary directory to a location we can mount (optional)
+ENV JAVA_OPTS="-XX:+HeapDumpOnOutOfMemoryError -XX:HeapDumpPath=/tmp/coredumps -XX:ErrorFile=/tmp/coredumps/hs_err_pid%p.log -XX:+CreateCoredumpOnCrash -Djava.io.tmpdir=/tmp"
+
+ENTRYPOINT ["sh", "-c", "java $JAVA_OPTS -javaagent:/opt/opentelemetry-javaagent.jar -Djava.security.egd=file:/dev/./urandom -jar app.jar"]
