@@ -3,11 +3,12 @@ version: "3.8"
 services:
   bet-settlement:
     build:
-      context: ./          # Path to directory containing Dockerfile
-      dockerfile: Dockerfile  # Optional if the file is named Dockerfile
-    image: myapp:latest       # Optional: tag the built image
+      context: .
+      dockerfile: ./Dockerfile.native
+      target: runtime-builder          # Build from source for local dev
+    image: bet-settlement:latest
     ports:
-      - "3000:3000"           # Expose app's port
+      - "8080:8080"                     # Adjust to your app's port
     environment:
       - REDIS_HOST=redis
       - REDIS_PORT=6379
@@ -22,8 +23,6 @@ services:
         condition: service_healthy
       rocketmq-broker:
         condition: service_healthy
-    volumes:
-      - ./:/app            # Mount source code for development (optional)
 
   # Development service – only started with profile "dev"
   bet-settlement-dev:
