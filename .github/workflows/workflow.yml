@@ -1,62 +1,458 @@
-# ------------------------------------------------------------------
-# Integration Tests
-# ------------------------------------------------------------------
-integration-tests:
-  runs-on: ubuntu-latest
-  steps:
-    - uses: actions/checkout@v4
-    - name: Set up JDK 21
-      uses: actions/setup-java@v4
-      with:
-        distribution: temurin
-        java-version: 21
-    - name: Pre‑pull Docker images for Testcontainers
-      run: |
-        # Pre‑pull commonly used images; adjust based on your actual containers
-        docker pull confluentinc/cp-kafka:latest || true
-        docker pull redis:latest || true
-        docker pull apache/rocketmq:latest || true
-    - name: Run integration tests with extended timeout
-      run: ./gradlew test --tests "com.sporty.betting.integration.*" -Dorg.gradle.testkit.timeout=60000
-      env:
-        DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
-        API_KEY: ${{ secrets.API_KEY }}
-        DB_URL: ${{ vars.DB_URL }}
-        LOG_LEVEL: ${{ vars.LOG_LEVEL }}
-    - name: Upload test results
-      uses: actions/upload-artifact@v4
-      if: always()
-      with:
-        name: integration-test-results
-        path: build/reports/tests/
+name: CI
 
-# ------------------------------------------------------------------
-# Acceptance Tests
-# ------------------------------------------------------------------
-acceptance-tests:
-  runs-on: ubuntu-latest
-  steps:
-    - uses: actions/checkout@v4
-    - name: Set up JDK 21
-      uses: actions/setup-java@v4
-      with:
-        distribution: temurin
-        java-version: 21
-    - name: Pre‑pull Docker images for Testcontainers
-      run: |
-        docker pull confluentinc/cp-kafka:latest || true
-        docker pull redis:latest || true
-        docker pull apache/rocketmq:latest || true
-    - name: Run acceptance tests with extended timeout
-      run: ./gradlew test --tests "com.sporty.betting.acceptance.*" -Dorg.gradle.testkit.timeout=60000
-      env:
-        DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
-        API_KEY: ${{ secrets.API_KEY }}
-        DB_URL: ${{ vars.DB_URL }}
-        LOG_LEVEL: ${{ vars.LOG_LEVEL }}
-    - name: Upload test results
-      uses: actions/upload-artifact@v4
-      if: always()
-      with:
-        name: acceptance-test-results
-        path: build/reports/tests/
+on:
+  push:
+    branches: [ main ]
+    tags:
+      - 'v*'
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to use (e.g., 1.2.3). If empty, auto-increment from latest tag.'
+        required: false
+        default: ''
+      create_tag:
+        description: 'Create a Git tag for this version?'
+        required: true
+        default: 'true'
+        type: choice
+        options:
+          - 'true'
+          - 'false'
+
+env:
+  DB_URL: ${{ vars.DB_URL }}
+  LOG_LEVEL: ${{ vars.LOG_LEVEL }}
+  # Testcontainers configuration
+  TESTCONTAINERS_RYUK_DISABLED: true
+  TESTCONTAINERS_CHECKS_DISABLE: true
+  DOCKER_HOST: unix:///var/run/docker.sock
+
+jobs:
+  # ------------------------------------------------------------------
+  # Unit Tests
+  # ------------------------------------------------------------------
+  unit-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - name: Run unit tests
+        run: ./gradlew test --tests "com.sporty.betting.unit.*"
+        env:
+          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+          API_KEY: ${{ secrets.API_KEY }}
+          DB_URL: ${{ vars.DB_URL }}
+          LOG_LEVEL: ${{ vars.LOG_LEVEL }}
+      - name: Upload test results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: unit-test-results
+          path: build/reports/tests/
+
+  # ------------------------------------------------------------------
+  # Integration Tests
+  # ------------------------------------------------------------------
+  integration-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - name: Docker info (debug)
+        run: docker info
+      - name: Pre‑pull Docker images for Testcontainers
+        run: |
+          docker pull confluentinc/cp-kafka:latest || true
+          docker pull redis:latest || true
+          docker pull apache/rocketmq:latest || true
+      - name: Run integration tests with extended timeout
+        run: ./gradlew test --tests "com.sporty.betting.integration.*" -Dorg.gradle.testkit.timeout=60000
+        env:
+          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+          API_KEY: ${{ secrets.API_KEY }}
+          DB_URL: ${{ vars.DB_URL }}
+          LOG_LEVEL: ${{ vars.LOG_LEVEL }}
+      - name: Upload test results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: integration-test-results
+          path: build/reports/tests/
+
+  # ------------------------------------------------------------------
+  # Acceptance Tests
+  # ------------------------------------------------------------------
+  acceptance-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - name: Docker info (debug)
+        run: docker info
+      - name: Pre‑pull Docker images for Testcontainers
+        run: |
+          docker pull confluentinc/cp-kafka:latest || true
+          docker pull redis:latest || true
+          docker pull apache/rocketmq:latest || true
+      - name: Run acceptance tests with extended timeout
+        run: ./gradlew test --tests "com.sporty.betting.acceptance.*" -Dorg.gradle.testkit.timeout=60000
+        env:
+          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+          API_KEY: ${{ secrets.API_KEY }}
+          DB_URL: ${{ vars.DB_URL }}
+          LOG_LEVEL: ${{ vars.LOG_LEVEL }}
+      - name: Upload test results
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: acceptance-test-results
+          path: build/reports/tests/
+
+  # ------------------------------------------------------------------
+  # Security scans
+  # ------------------------------------------------------------------
+  dependency-scan:
+    name: Dependency vulnerability scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - name: Generate dependency lockfile
+        run: ./gradlew dependencies --write-locks || ./gradlew dependencies > /dev/null
+        env:
+          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+          API_KEY: ${{ secrets.API_KEY }}
+          DB_URL: ${{ vars.DB_URL }}
+      - name: Run Trivy filesystem scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: fs
+          scan-ref: .
+          format: table
+          exit-code: 1
+          severity: CRITICAL,HIGH
+          scanners: vuln
+      - name: Upload Trivy results (SARIF)
+        uses: aquasecurity/trivy-action@master
+        if: always()
+        with:
+          scan-type: fs
+          scan-ref: .
+          format: sarif
+          output: trivy-deps.sarif
+          severity: CRITICAL,HIGH,MEDIUM
+          scanners: vuln
+      - name: Upload SARIF to GitHub Security
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: trivy-deps.sarif
+          category: dependency-scan
+
+  secret-scan:
+    name: Secret leak detection
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Run Gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  sast:
+    name: Static Application Security Testing
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: java-kotlin
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+      - name: Build for CodeQL
+        run: ./gradlew build -x test
+        env:
+          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+          API_KEY: ${{ secrets.API_KEY }}
+          DB_URL: ${{ vars.DB_URL }}
+      - name: Perform CodeQL analysis
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: sast
+
+  # ------------------------------------------------------------------
+  # Native compilation (using GraalVM)
+  # ------------------------------------------------------------------
+  native-compile:
+    name: Compile native image
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/graalvm/native-image-community:21-muslib
+    needs:
+      - unit-tests
+      - integration-tests
+      - acceptance-tests
+      - dependency-scan
+      - sast
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Determine version
+        id: version
+        run: |
+          if [[ $GITHUB_REF == refs/tags/v* ]]; then
+            VERSION=${GITHUB_REF#refs/tags/v}
+          elif [[ ${{ github.event_name }} == 'workflow_dispatch' && -n "${{ github.event.inputs.version }}" ]]; then
+            VERSION=${{ github.event.inputs.version }}
+          else
+            LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "0.0.0")
+            COMMIT_HASH=$(git rev-parse --short HEAD)
+            VERSION="${LATEST_TAG}-${COMMIT_HASH}"
+          fi
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+
+      - name: Build native image
+        run: ./gradlew nativeCompile -Pversion=$VERSION
+        env:
+          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+          API_KEY: ${{ secrets.API_KEY }}
+          DB_URL: ${{ vars.DB_URL }}
+
+      - name: Upload native binary artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-image-${{ steps.version.outputs.version }}
+          path: build/native/nativeCompile/
+
+  # ------------------------------------------------------------------
+  # Docker build – uses the pre‑compiled native binary
+  # ------------------------------------------------------------------
+  docker-build:
+    name: Build Docker image
+    runs-on: ubuntu-latest
+    needs: native-compile
+    outputs:
+      version: ${{ needs.native-compile.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download native binary
+        uses: actions/download-artifact@v4
+        with:
+          name: native-image-${{ needs.native-compile.outputs.version }}
+          path: ./native
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          load: true
+          build-args: |
+            VERSION=${{ needs.native-compile.outputs.version }}
+          tags: |
+            bet-settlement-service:${{ needs.native-compile.outputs.version }}
+            bet-settlement-service:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Save Docker image as artifact
+        run: docker save bet-settlement-service:${{ needs.native-compile.outputs.version }} | gzip > docker-image.tar.gz
+
+      - name: Upload Docker image artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: docker-image
+          path: docker-image.tar.gz
+
+  # ------------------------------------------------------------------
+  # Docker image vulnerability scan
+  # ------------------------------------------------------------------
+  docker-image-scan:
+    name: Docker image vulnerability scan
+    runs-on: ubuntu-latest
+    needs: docker-build
+    if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+    steps:
+      - name: Download Docker image
+        uses: actions/download-artifact@v4
+        with:
+          name: docker-image
+          path: /tmp
+      - name: Load Docker image
+        run: docker load < /tmp/docker-image.tar.gz
+      - name: Scan Docker image with Trivy
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: bet-settlement-service:latest
+          format: table
+          exit-code: 1
+          severity: CRITICAL,HIGH
+          scanners: vuln
+      - name: Upload Docker scan SARIF
+        uses: aquasecurity/trivy-action@master
+        if: always()
+        with:
+          image-ref: bet-settlement-service:latest
+          format: sarif
+          output: trivy-image.sarif
+          severity: CRITICAL,HIGH,MEDIUM
+          scanners: vuln
+      - name: Upload SARIF to GitHub Security
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: trivy-image.sarif
+          category: docker-image-scan
+
+  # ------------------------------------------------------------------
+  # Auto tag creation after merge to main
+  # ------------------------------------------------------------------
+  create-tag:
+    name: Create version tag after merge
+    runs-on: ubuntu-latest
+    needs:
+      - docker-image-scan
+      - native-compile
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Determine new version
+        id: version
+        run: |
+          LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
+          LATEST_VERSION=${LATEST_TAG#v}
+          IFS='.' read -r major minor patch <<< "$LATEST_VERSION"
+          patch=$((patch + 1))
+          NEW_VERSION="${major}.${minor}.${patch}"
+          echo "version=$NEW_VERSION" >> $GITHUB_OUTPUT
+          echo "tag=v$NEW_VERSION" >> $GITHUB_OUTPUT
+      - name: Create and push tag
+        run: |
+          TAG="${{ steps.version.outputs.tag }}"
+          if git rev-parse "$TAG" >/dev/null 2>&1; then
+            echo "Tag $TAG already exists, skipping"
+          else
+            git tag "$TAG"
+            git push origin "$TAG"
+            echo "Created tag $TAG"
+          fi
+
+  # ------------------------------------------------------------------
+  # Manual release (creates tag and GitHub release)
+  # ------------------------------------------------------------------
+  manual-release:
+    name: Manual release build
+    runs-on: ubuntu-latest
+    needs:
+      - native-compile
+    if: github.event_name == 'workflow_dispatch' && github.event.inputs.create_tag == 'true'
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Determine version
+        id: version
+        run: |
+          if [[ -n "${{ github.event.inputs.version }}" ]]; then
+            VERSION="${{ github.event.inputs.version }}"
+          else
+            LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
+            LATEST_VERSION=${LATEST_TAG#v}
+            IFS='.' read -r major minor patch <<< "$LATEST_VERSION"
+            patch=$((patch + 1))
+            VERSION="${major}.${minor}.${patch}"
+          fi
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "tag=v$VERSION" >> $GITHUB_OUTPUT
+      - name: Create and push tag
+        run: |
+          TAG="${{ steps.version.outputs.tag }}"
+          if git rev-parse "$TAG" >/dev/null 2>&1; then
+            echo "Tag $TAG already exists, skipping"
+          else
+            git tag "$TAG"
+            git push origin "$TAG"
+            echo "Created tag $TAG"
+          fi
+      - name: Download native image artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: native-image-${{ steps.version.outputs.version }}
+          path: ./native
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: Release ${{ steps.version.outputs.version }}
+          draft: false
+          prerelease: false
+          files: |
+            ./native/*
+
+  # ------------------------------------------------------------------
+  # Automatic release when a tag is pushed (e.g., from create-tag)
+  # ------------------------------------------------------------------
+  release-on-tag:
+    name: Create GitHub Release from tag
+    runs-on: ubuntu-latest
+    needs:
+      - native-compile
+    if: startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: write
+    steps:
+      - name: Download native image artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: native-image-${{ github.ref_name }}
+          path: ./native
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: Release ${{ github.ref_name }}
+          draft: false
+          prerelease: false
+          files: |
+            ./native/*
