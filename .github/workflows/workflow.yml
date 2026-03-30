@@ -25,12 +25,39 @@ on:
 env:
   DB_URL: ${{ vars.DB_URL }}
   LOG_LEVEL: ${{ vars.LOG_LEVEL }}
-  # Testcontainers configuration
-  TESTCONTAINERS_RYUK_DISABLED: true
-  TESTCONTAINERS_CHECKS_DISABLE: true
-  DOCKER_HOST: unix:///var/run/docker.sock
+  CI: true
 
 jobs:
+  # ------------------------------------------------------------------
+  # Determine build mode
+  # ------------------------------------------------------------------
+  config:
+    name: Resolve build configuration
+    runs-on: ubuntu-latest
+    outputs:
+      native: ${{ steps.flags.outputs.native }}
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Set build flags
+        id: flags
+        run: echo "native=${{ vars.NATIVE_IMAGE_ENABLED == 'true' }}" >> $GITHUB_OUTPUT
+      - name: Determine version
+        id: version
+        run: |
+          if [[ $GITHUB_REF == refs/tags/v* ]]; then
+            VERSION=${GITHUB_REF#refs/tags/v}
+          elif [[ "${{ github.event_name }}" == 'workflow_dispatch' && -n "${{ github.event.inputs.version }}" ]]; then
+            VERSION=${{ github.event.inputs.version }}
+          else
+            LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "0.0.0")
+            COMMIT_HASH=$(git rev-parse --short HEAD)
+            VERSION="${LATEST_TAG}-${COMMIT_HASH}"
+          fi
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
   # ------------------------------------------------------------------
   # Unit Tests
   # ------------------------------------------------------------------
@@ -48,8 +75,6 @@ jobs:
         env:
           DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
           API_KEY: ${{ secrets.API_KEY }}
-          DB_URL: ${{ vars.DB_URL }}
-          LOG_LEVEL: ${{ vars.LOG_LEVEL }}
       - name: Upload test results
         uses: actions/upload-artifact@v4
         if: always()
@@ -58,10 +83,66 @@ jobs:
           path: build/reports/tests/
 
   # ------------------------------------------------------------------
-  # Integration Tests
+  # Integration Tests (Kafka, Redis & RocketMQ as service containers)
   # ------------------------------------------------------------------
   integration-tests:
     runs-on: ubuntu-latest
+    services:
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 5
+      kafka:
+        image: apache/kafka:3.9.0
+        ports:
+          - 9092:9092
+        env:
+          KAFKA_NODE_ID: 1
+          KAFKA_PROCESS_ROLES: broker,controller
+          KAFKA_LISTENERS: PLAINTEXT://:29092,CONTROLLER://:9093,PLAINTEXT_HOST://:9092
+          KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:29092,PLAINTEXT_HOST://localhost:9092
+          KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+          KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+          KAFKA_CONTROLLER_QUORUM_VOTERS: 1@localhost:9093
+          KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+          KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+          KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+          KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+          KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+        options: >-
+          --health-cmd "nc -z localhost 9092 || exit 1"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 15
+          --health-start-period 30s
+      rocketmq-namesrv:
+        image: apache/rocketmq:5.3.1
+        ports:
+          - 9876:9876
+        options: >-
+          --health-cmd "nc -z localhost 9876 || exit 1"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 15
+          --health-start-period 10s
+      rocketmq-broker:
+        image: apache/rocketmq:5.3.1
+        ports:
+          - 10911:10911
+          - 10909:10909
+        env:
+          NAMESRV_ADDR: rocketmq-namesrv:9876
+        options: >-
+          --health-cmd "nc -z localhost 10911 || exit 1"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+          --health-start-period 20s
     steps:
       - uses: actions/checkout@v4
       - name: Set up JDK 21
@@ -69,20 +150,11 @@ jobs:
         with:
           distribution: temurin
           java-version: 21
-      - name: Docker info (debug)
-        run: docker info
-      - name: Pre‑pull Docker images for Testcontainers
-        run: |
-          docker pull confluentinc/cp-kafka:latest || true
-          docker pull redis:latest || true
-          docker pull apache/rocketmq:latest || true
-      - name: Run integration tests with extended timeout
-        run: ./gradlew test --tests "com.sporty.betting.integration.*" -Dorg.gradle.testkit.timeout=60000
+      - name: Run integration tests
+        run: ./gradlew test --tests "com.sporty.betting.integration.*"
         env:
           DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
           API_KEY: ${{ secrets.API_KEY }}
-          DB_URL: ${{ vars.DB_URL }}
-          LOG_LEVEL: ${{ vars.LOG_LEVEL }}
       - name: Upload test results
         uses: actions/upload-artifact@v4
         if: always()
@@ -91,10 +163,66 @@ jobs:
           path: build/reports/tests/
 
   # ------------------------------------------------------------------
-  # Acceptance Tests
+  # Acceptance Tests (Kafka, Redis & RocketMQ as service containers)
   # ------------------------------------------------------------------
   acceptance-tests:
     runs-on: ubuntu-latest
+    services:
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 5
+      kafka:
+        image: apache/kafka:3.9.0
+        ports:
+          - 9092:9092
+        env:
+          KAFKA_NODE_ID: 1
+          KAFKA_PROCESS_ROLES: broker,controller
+          KAFKA_LISTENERS: PLAINTEXT://:29092,CONTROLLER://:9093,PLAINTEXT_HOST://:9092
+          KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:29092,PLAINTEXT_HOST://localhost:9092
+          KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+          KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+          KAFKA_CONTROLLER_QUORUM_VOTERS: 1@localhost:9093
+          KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+          KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+          KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+          KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+          KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+        options: >-
+          --health-cmd "nc -z localhost 9092 || exit 1"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 15
+          --health-start-period 30s
+      rocketmq-namesrv:
+        image: apache/rocketmq:5.3.1
+        ports:
+          - 9876:9876
+        options: >-
+          --health-cmd "nc -z localhost 9876 || exit 1"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 15
+          --health-start-period 10s
+      rocketmq-broker:
+        image: apache/rocketmq:5.3.1
+        ports:
+          - 10911:10911
+          - 10909:10909
+        env:
+          NAMESRV_ADDR: rocketmq-namesrv:9876
+        options: >-
+          --health-cmd "nc -z localhost 10911 || exit 1"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+          --health-start-period 20s
     steps:
       - uses: actions/checkout@v4
       - name: Set up JDK 21
@@ -102,20 +230,11 @@ jobs:
         with:
           distribution: temurin
           java-version: 21
-      - name: Docker info (debug)
-        run: docker info
-      - name: Pre‑pull Docker images for Testcontainers
-        run: |
-          docker pull confluentinc/cp-kafka:latest || true
-          docker pull redis:latest || true
-          docker pull apache/rocketmq:latest || true
-      - name: Run acceptance tests with extended timeout
-        run: ./gradlew test --tests "com.sporty.betting.acceptance.*" -Dorg.gradle.testkit.timeout=60000
+      - name: Run acceptance tests
+        run: ./gradlew test --tests "com.sporty.betting.acceptance.*"
         env:
           DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
           API_KEY: ${{ secrets.API_KEY }}
-          DB_URL: ${{ vars.DB_URL }}
-          LOG_LEVEL: ${{ vars.LOG_LEVEL }}
       - name: Upload test results
         uses: actions/upload-artifact@v4
         if: always()
@@ -138,10 +257,6 @@ jobs:
           java-version: 21
       - name: Generate dependency lockfile
         run: ./gradlew dependencies --write-locks || ./gradlew dependencies > /dev/null
-        env:
-          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
-          API_KEY: ${{ secrets.API_KEY }}
-          DB_URL: ${{ vars.DB_URL }}
       - name: Run Trivy filesystem scan
         uses: aquasecurity/trivy-action@master
         with:
@@ -198,101 +313,68 @@ jobs:
           java-version: 21
       - name: Build for CodeQL
         run: ./gradlew build -x test
-        env:
-          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
-          API_KEY: ${{ secrets.API_KEY }}
-          DB_URL: ${{ vars.DB_URL }}
       - name: Perform CodeQL analysis
         uses: github/codeql-action/analyze@v3
         with:
           category: sast
 
   # ------------------------------------------------------------------
-  # Native compilation (using GraalVM)
+  # Native compilation (using GraalVM) — only when NATIVE_IMAGE_ENABLED=true
   # ------------------------------------------------------------------
   native-compile:
     name: Compile native image
     runs-on: ubuntu-latest
+    needs: [ config, unit-tests, integration-tests, acceptance-tests, dependency-scan, sast ]
+    if: needs.config.outputs.native == 'true'
     container:
       image: ghcr.io/graalvm/native-image-community:21-muslib
-    needs:
-      - unit-tests
-      - integration-tests
-      - acceptance-tests
-      - dependency-scan
-      - sast
     outputs:
-      version: ${{ steps.version.outputs.version }}
+      version: ${{ needs.config.outputs.version }}
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-
-      - name: Determine version
-        id: version
-        run: |
-          if [[ $GITHUB_REF == refs/tags/v* ]]; then
-            VERSION=${GITHUB_REF#refs/tags/v}
-          elif [[ ${{ github.event_name }} == 'workflow_dispatch' && -n "${{ github.event.inputs.version }}" ]]; then
-            VERSION=${{ github.event.inputs.version }}
-          else
-            LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "0.0.0")
-            COMMIT_HASH=$(git rev-parse --short HEAD)
-            VERSION="${LATEST_TAG}-${COMMIT_HASH}"
-          fi
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
-          echo "VERSION=$VERSION" >> $GITHUB_ENV
-
       - name: Build native image
-        run: ./gradlew nativeCompile -Pversion=$VERSION
-        env:
-          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
-          API_KEY: ${{ secrets.API_KEY }}
-          DB_URL: ${{ vars.DB_URL }}
-
+        run: ./gradlew nativeCompile -Pversion=${{ needs.config.outputs.version }}
       - name: Upload native binary artifact
         uses: actions/upload-artifact@v4
         with:
-          name: native-image-${{ steps.version.outputs.version }}
+          name: native-image-${{ needs.config.outputs.version }}
           path: build/native/nativeCompile/
 
   # ------------------------------------------------------------------
-  # Docker build – uses the pre‑compiled native binary
+  # Docker build (native) – packages pre-compiled native binary
   # ------------------------------------------------------------------
-  docker-build:
-    name: Build Docker image
+  docker-build-native:
+    name: Build Docker image (native)
     runs-on: ubuntu-latest
-    needs: native-compile
+    needs: [ config, native-compile ]
+    if: needs.config.outputs.native == 'true'
     outputs:
-      version: ${{ needs.native-compile.outputs.version }}
+      version: ${{ needs.config.outputs.version }}
     steps:
       - uses: actions/checkout@v4
-
       - name: Download native binary
         uses: actions/download-artifact@v4
         with:
-          name: native-image-${{ needs.native-compile.outputs.version }}
+          name: native-image-${{ needs.config.outputs.version }}
           path: ./native
-
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
-
       - name: Build Docker image
         uses: docker/build-push-action@v5
         with:
           context: .
           load: true
           build-args: |
-            VERSION=${{ needs.native-compile.outputs.version }}
+            VERSION=${{ needs.config.outputs.version }}
           tags: |
-            bet-settlement-service:${{ needs.native-compile.outputs.version }}
+            bet-settlement-service:${{ needs.config.outputs.version }}
             bet-settlement-service:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
-
       - name: Save Docker image as artifact
-        run: docker save bet-settlement-service:${{ needs.native-compile.outputs.version }} | gzip > docker-image.tar.gz
-
+        run: docker save bet-settlement-service:${{ needs.config.outputs.version }} | gzip > docker-image.tar.gz
       - name: Upload Docker image artifact
         uses: actions/upload-artifact@v4
         with:
@@ -300,13 +382,50 @@ jobs:
           path: docker-image.tar.gz
 
   # ------------------------------------------------------------------
-  # Docker image vulnerability scan
+  # Docker build (JVM) – standard Dockerfile, no native binary needed
+  # ------------------------------------------------------------------
+  docker-build-jvm:
+    name: Build Docker image (JVM)
+    runs-on: ubuntu-latest
+    needs: [ config, unit-tests, integration-tests, acceptance-tests, dependency-scan, sast ]
+    if: needs.config.outputs.native != 'true'
+    outputs:
+      version: ${{ needs.config.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      - name: Build Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          load: true
+          build-args: |
+            VERSION=${{ needs.config.outputs.version }}
+          tags: |
+            bet-settlement-service:${{ needs.config.outputs.version }}
+            bet-settlement-service:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Save Docker image as artifact
+        run: docker save bet-settlement-service:${{ needs.config.outputs.version }} | gzip > docker-image.tar.gz
+      - name: Upload Docker image artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: docker-image
+          path: docker-image.tar.gz
+
+  # ------------------------------------------------------------------
+  # Docker image vulnerability scan (runs for both native and JVM)
   # ------------------------------------------------------------------
   docker-image-scan:
     name: Docker image vulnerability scan
     runs-on: ubuntu-latest
-    needs: docker-build
-    if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+    needs: [ config, docker-build-native, docker-build-jvm ]
+    if: |
+      always() &&
+      (needs.docker-build-native.result == 'success' || needs.docker-build-jvm.result == 'success') &&
+      (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch')
     steps:
       - name: Download Docker image
         uses: actions/download-artifact@v4
@@ -346,8 +465,11 @@ jobs:
     name: Create version tag after merge
     runs-on: ubuntu-latest
     needs:
-      - docker-image-scan
-      - native-compile
+      - unit-tests
+      - integration-tests
+      - acceptance-tests
+      - dependency-scan
+      - sast
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     permissions:
       contents: write
@@ -377,35 +499,45 @@ jobs:
           fi
 
   # ------------------------------------------------------------------
-  # Manual release (creates tag and GitHub release)
+  # Release – works for both native and JVM builds
   # ------------------------------------------------------------------
-  manual-release:
-    name: Manual release build
+  release:
+    name: Create GitHub Release
     runs-on: ubuntu-latest
-    needs:
-      - native-compile
-    if: github.event_name == 'workflow_dispatch' && github.event.inputs.create_tag == 'true'
+    needs: [ config, docker-image-scan ]
+    if: |
+      always() &&
+      (needs.docker-image-scan.result == 'success' || needs.docker-image-scan.result == 'skipped') &&
+      (startsWith(github.ref, 'refs/tags/v') || (github.event_name == 'workflow_dispatch' && github.event.inputs.create_tag == 'true'))
     permissions:
       contents: write
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Determine version
+
+      - name: Determine release version
         id: version
         run: |
-          if [[ -n "${{ github.event.inputs.version }}" ]]; then
-            VERSION="${{ github.event.inputs.version }}"
+          if [[ $GITHUB_REF == refs/tags/v* ]]; then
+            VERSION=${GITHUB_REF#refs/tags/v}
+            TAG=$GITHUB_REF_NAME
+          elif [[ -n "${{ github.event.inputs.version }}" ]]; then
+            VERSION=${{ github.event.inputs.version }}
+            TAG="v${VERSION}"
           else
             LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
             LATEST_VERSION=${LATEST_TAG#v}
             IFS='.' read -r major minor patch <<< "$LATEST_VERSION"
             patch=$((patch + 1))
             VERSION="${major}.${minor}.${patch}"
+            TAG="v${VERSION}"
           fi
           echo "version=$VERSION" >> $GITHUB_OUTPUT
-          echo "tag=v$VERSION" >> $GITHUB_OUTPUT
-      - name: Create and push tag
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+
+      - name: Create and push tag (workflow_dispatch only)
+        if: github.event_name == 'workflow_dispatch'
         run: |
           TAG="${{ steps.version.outputs.tag }}"
           if git rev-parse "$TAG" >/dev/null 2>&1; then
@@ -415,11 +547,20 @@ jobs:
             git push origin "$TAG"
             echo "Created tag $TAG"
           fi
+
       - name: Download native image artifact
+        if: needs.config.outputs.native == 'true'
         uses: actions/download-artifact@v4
         with:
-          name: native-image-${{ steps.version.outputs.version }}
-          path: ./native
+          name: native-image-${{ needs.config.outputs.version }}
+          path: ./release-assets
+
+      - name: Download Docker image artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: docker-image
+          path: ./release-assets
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
         with:
@@ -427,32 +568,4 @@ jobs:
           name: Release ${{ steps.version.outputs.version }}
           draft: false
           prerelease: false
-          files: |
-            ./native/*
-
-  # ------------------------------------------------------------------
-  # Automatic release when a tag is pushed (e.g., from create-tag)
-  # ------------------------------------------------------------------
-  release-on-tag:
-    name: Create GitHub Release from tag
-    runs-on: ubuntu-latest
-    needs:
-      - native-compile
-    if: startsWith(github.ref, 'refs/tags/v')
-    permissions:
-      contents: write
-    steps:
-      - name: Download native image artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: native-image-${{ github.ref_name }}
-          path: ./native
-      - name: Create Release
-        uses: softprops/action-gh-release@v1
-        with:
-          tag_name: ${{ github.ref_name }}
-          name: Release ${{ github.ref_name }}
-          draft: false
-          prerelease: false
-          files: |
-            ./native/*
+          files: ./release-assets/*

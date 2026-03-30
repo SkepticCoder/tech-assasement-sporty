@@ -1,0 +1,76 @@
+# ------------------------------------------------------------------------------
+# Builder stage – compiles the native image from source (local development)
+# ------------------------------------------------------------------------------
+FROM ghcr.io/graalvm/graalvm-community:21 AS builder
+
+ARG VERSION=0.0.0
+ENV VERSION=${VERSION}
+
+WORKDIR /app
+
+# Copy source and Gradle wrapper
+COPY . .
+RUN ls -all
+
+# Make Gradle wrapper executable
+RUN chmod +x gradlew
+
+# Build native image
+RUN ./gradlew nativeCompile -Pversion=${VERSION}
+
+# ------------------------------------------------------------------------------
+# Runtime stage – uses the binary built from source (for local development)
+# ------------------------------------------------------------------------------
+FROM alpine:3.19 AS runtime-builder
+
+RUN apk add --no-cache libc6-compat
+RUN addgroup -S appgroup && adduser -S appuser -G appgroup
+
+WORKDIR /app
+
+# Copy the binary from the builder stage
+COPY --from=builder /app/build/native/nativeCompile/betting-settlement-service .
+
+RUN chown -R appuser:appgroup /app && chmod +x betting-settlement-service
+USER appuser
+
+EXPOSE 8080
+
+ENV OTEL_SERVICE_NAME=betting-settlement \
+    OTEL_TRACES_EXPORTER=otlp \
+    OTEL_METRICS_EXPORTER=otlp \
+    OTEL_LOGS_EXPORTER=otlp \
+    OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318 \
+    OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
+
+ENTRYPOINT ["./betting-settlement-service"]
+
+# ------------------------------------------------------------------------------
+# Runtime stage – uses a pre‑built binary from the host (CI mode)
+# ------------------------------------------------------------------------------
+FROM alpine:3.19 AS runtime-prebuilt
+
+RUN apk add --no-cache libc6-compat
+RUN addgroup -S appgroup && adduser -S appuser -G appgroup
+
+WORKDIR /app
+
+# Copy the entire contents of ./native (which contains the binary)
+COPY --chown=appuser:appgroup native/ .
+
+# Rename the first file we find to the expected name
+RUN mv $(find . -maxdepth 1 -type f -print -quit) betting-settlement-service || true && \
+    chmod +x betting-settlement-service
+
+USER appuser
+
+EXPOSE 8080
+
+ENV OTEL_SERVICE_NAME=betting-settlement \
+    OTEL_TRACES_EXPORTER=otlp \
+    OTEL_METRICS_EXPORTER=otlp \
+    OTEL_LOGS_EXPORTER=otlp \
+    OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318 \
+    OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
+
+ENTRYPOINT ["./betting-settlement-service"]
