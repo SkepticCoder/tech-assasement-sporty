@@ -1,16 +1,20 @@
+version: "3.8"
+
 services:
   redis:
-    image: redis:7-alpine
+    image: redis:${REDIS_VERSION}
     ports:
-      - "6379:6379"
+      - "6377:6379"
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: [ "CMD-SHELL", "nc -z localhost 6379" ]
       interval: 5s
       timeout: 3s
       retries: 5
+      start_period: 5s
 
   kafka:
-    image: apache/kafka:3.9.0
+    image: apache/kafka:${KAFKA_VERSION}
+    container_name: kafka
     ports:
       - "9092:9092"
     environment:
@@ -20,32 +24,47 @@ services:
       KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
       KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
       KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
-      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@localhost:9093
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
       KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
       KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
       KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
       KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
     healthcheck:
-      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:9092 > /dev/null 2>&1"]
+      test: [ "CMD-SHELL", "nc -z localhost 9092" ]
       interval: 10s
-      timeout: 10s
+      timeout: 5s
       retries: 10
-      start_period: 30s
+      start_period: 20s
+
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    container_name: kafka-ui
+    ports:
+      - "8081:8080"
+    depends_on:
+      kafka:
+        condition: service_healthy
+    environment:
+      KAFKA_CLUSTERS_0_NAME: local
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:29092
 
   rocketmq-namesrv:
-    image: apache/rocketmq:5.3.1
+    image: apache/rocketmq:${ROCKETMQ_VERSION}
+    container_name: rocketmq-namesrv
     ports:
       - "9876:9876"
     command: sh mqnamesrv
     healthcheck:
-      test: ["CMD-SHELL", "nc -z localhost 9876 || exit 1"]
+      test: [ "CMD-SHELL", "bash -c '</dev/tcp/localhost/9876'" ]
       interval: 5s
-      timeout: 3s
+      timeout: 5s
       retries: 10
+      start_period: 10s
 
   rocketmq-broker:
-    image: apache/rocketmq:5.3.1
+    image: apache/rocketmq:${ROCKETMQ_VERSION}
+    container_name: rocketmq-broker
     ports:
       - "10911:10911"
       - "10909:10909"
@@ -55,3 +74,55 @@ services:
     depends_on:
       rocketmq-namesrv:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c '</dev/tcp/localhost/10911'"]
+      interval: 5s
+      timeout: 5s
+      retries: 15
+      start_period: 15s
+
+  rocketmq-dashboard:
+    image: apacherocketmq/rocketmq-dashboard:latest
+    container_name: rocketmq-dashboard
+    ports:
+      - "8082:8080"
+    depends_on:
+      rocketmq-namesrv:
+        condition: service_healthy
+    environment:
+      JAVA_OPTS: "-Drocketmq.namesrv.addr=rocketmq-namesrv:9876"
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yaml:/etc/prometheus/prometheus.yml
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --web.enable-remote-write-receiver
+      - --enable-feature=otlp-write-receiver
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:latest
+    container_name: otel-collector
+    ports:
+      - "4317:4317"   # gRPC OTLP
+      - "4318:4318"   # HTTP OTLP
+    volumes:
+      - ./otel-collector-config.yaml:/etc/otelcol-contrib/config.yaml
+    depends_on:
+      jaeger:
+        condition: service_started
+      prometheus:
+        condition: service_started
+
+  jaeger:
+    image: jaegertracing/jaeger:2
+    container_name: jaeger
+    ports:
+      - "16686:16686" # Jaeger UI
+      - "4319:4317"   # gRPC OTLP (Jaeger native)
+    environment:
+      COLLECTOR_OTLP_ENABLED: "true"

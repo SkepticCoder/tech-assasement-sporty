@@ -1,5 +1,7 @@
 package com.sporty.betting.unit;
 
+import static org.mockito.Mockito.verify;
+
 import com.sporty.betting.domain.model.EventOutcome;
 import com.sporty.betting.domain.service.EventOutcomeServiceImpl;
 import com.sporty.betting.messaging.kafka.EventOutcomeProducer;
@@ -9,27 +11,24 @@ import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
-import static org.mockito.Mockito.verify;
-
 @ExtendWith(MockitoExtension.class)
 class EventOutcomeServiceTest {
 
-    @Mock
-    private EventOutcomeProducer kafkaProducer;
+  @Mock private EventOutcomeProducer kafkaProducer;
 
-    @InjectMocks
-    private EventOutcomeServiceImpl eventOutcomeService;
+  @InjectMocks private EventOutcomeServiceImpl eventOutcomeService;
 
-    @Test
-    void shouldDelegateToKafkaProducer() {
-        EventOutcome outcome = EventOutcome.builder()
-                .eventId("event-100")
-                .eventName("Test Match")
-                .eventWinnerId("team-a")
-                .build();
+  @Test
+  void shouldDelegateToKafkaProducer() {
+    EventOutcome outcome =
+        EventOutcome.builder()
+            .eventId("event-100")
+            .eventName("Test Match")
+            .eventWinnerId("team-a")
+            .build();
 
-        eventOutcomeService.publishOutcome(outcome);
+    eventOutcomeService.publishOutcome(outcome);
 
-        verify(kafkaProducer).send(outcome);
-    }
+    verify(kafkaProducer).send(outcome);
+  }
 }

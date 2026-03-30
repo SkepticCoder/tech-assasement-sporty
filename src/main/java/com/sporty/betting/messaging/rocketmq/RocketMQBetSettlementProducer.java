@@ -13,11 +13,11 @@ import org.springframework.stereotype.Component;
 @ConditionalOnProperty(name = "rocketmq.enabled", havingValue = "true", matchIfMissing = true)
 public class RocketMQBetSettlementProducer implements BetSettlementRocketProducer {
 
-    private final RocketMQTemplate rocketMQTemplate;
+  private final RocketMQTemplate rocketMQTemplate;
 
-    @Override
-    public void send(BetSettlement settlement) {
-        rocketMQTemplate.convertAndSend(TOPIC, settlement);
-        log.info("Sent bet settlement to RocketMQ: betId={}", settlement.getBetId());
-    }
+  @Override
+  public void send(BetSettlement settlement) {
+    rocketMQTemplate.convertAndSend(TOPIC, settlement);
+    log.info("Sent bet settlement to RocketMQ: betId={}", settlement.getBetId());
+  }
 }

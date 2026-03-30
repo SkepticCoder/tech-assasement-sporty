@@ -13,23 +13,26 @@ import org.springframework.web.bind.annotation.RestController;
 @RequiredArgsConstructor
 public class EventOutcomeController implements EventOutcomesApi {
 
-    private final EventOutcomeService eventOutcomeService;
+  private final EventOutcomeService eventOutcomeService;
 
-    @Override
-    public ResponseEntity<EventOutcomeResponse> publishEventOutcome(EventOutcomeRequest eventOutcomeRequest) {
-        EventOutcome outcome = EventOutcome.builder()
-                .eventId(eventOutcomeRequest.getEventId())
-                .eventName(eventOutcomeRequest.getEventName())
-                .eventWinnerId(eventOutcomeRequest.getEventWinnerId())
-                .build();
+  @Override
+  public ResponseEntity<EventOutcomeResponse> publishEventOutcome(
+      EventOutcomeRequest eventOutcomeRequest) {
+    EventOutcome outcome =
+        EventOutcome.builder()
+            .eventId(eventOutcomeRequest.getEventId())
+            .eventName(eventOutcomeRequest.getEventName())
+            .eventWinnerId(eventOutcomeRequest.getEventWinnerId())
+            .build();
 
-        eventOutcomeService.publishOutcome(outcome);
+    eventOutcomeService.publishOutcome(outcome);
 
-        EventOutcomeResponse response = new EventOutcomeResponse()
-                .eventId(eventOutcomeRequest.getEventId())
-                .status("ACCEPTED")
-                .message("Event outcome published for settlement processing");
+    EventOutcomeResponse response =
+        new EventOutcomeResponse()
+            .eventId(eventOutcomeRequest.getEventId())
+            .status(EventOutcomeResponse.StatusEnum.ACCEPTED)
+            .message("Event outcome published for settlement processing");
 
-        return ResponseEntity.status(HttpStatus.ACCEPTED).body(response);
-    }
+    return ResponseEntity.status(HttpStatus.ACCEPTED).body(response);
+  }
 }

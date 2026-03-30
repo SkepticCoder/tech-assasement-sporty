@@ -11,11 +11,11 @@ import org.springframework.stereotype.Service;
 @RequiredArgsConstructor
 public class EventOutcomeServiceImpl implements EventOutcomeService {
 
-    private final EventOutcomeProducer kafkaProducer;
+  private final EventOutcomeProducer kafkaProducer;
 
-    @Override
-    public void publishOutcome(EventOutcome outcome) {
-        log.info("Publishing event outcome for eventId={}", outcome.getEventId());
-        kafkaProducer.send(outcome);
-    }
+  @Override
+  public void publishOutcome(EventOutcome outcome) {
+    log.info("Publishing event outcome for eventId={}", outcome.getEventId());
+    kafkaProducer.send(outcome);
+  }
 }

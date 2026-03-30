@@ -14,16 +14,15 @@ import org.springframework.stereotype.Component;
 @RequiredArgsConstructor
 @ConditionalOnProperty(name = "rocketmq.enabled", havingValue = "true", matchIfMissing = true)
 @RocketMQMessageListener(
-        topic = BetSettlementRocketProducer.TOPIC,
-        consumerGroup = "bet-settlement-consumer-group"
-)
+    topic = BetSettlementRocketProducer.TOPIC,
+    consumerGroup = "bet-settlement-consumer-group")
 public class BetSettlementRocketConsumer implements RocketMQListener<BetSettlement> {
 
-    private final BetSettlementService betSettlementService;
+  private final BetSettlementService betSettlementService;
 
-    @Override
-    public void onMessage(BetSettlement settlement) {
-        log.info("Consumed bet settlement from RocketMQ: betId={}", settlement.getBetId());
-        betSettlementService.settle(settlement);
-    }
+  @Override
+  public void onMessage(BetSettlement settlement) {
+    log.info("Consumed bet settlement from RocketMQ: betId={}", settlement.getBetId());
+    betSettlementService.settle(settlement);
+  }
 }

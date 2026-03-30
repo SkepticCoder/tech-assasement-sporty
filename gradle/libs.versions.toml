@@ -9,6 +9,8 @@ testcontainers = "1.20.4"
 awaitility = "4.3.0"
 mockito = "5.23.0"
 openapi-generator = "7.12.0"
+kafka = "3.9.0"
+opentelemetry-agent = "2.14.0"
 
 [libraries]
 # Spring Boot starters
@@ -51,3 +53,7 @@ spring-boot = { id = "org.springframework.boot", version.ref = "spring-boot" }
 spring-dependency-management = { id = "io.spring.dependency-management", version.ref = "spring-dependency-management" }
 graalvm-native = { id = "org.graalvm.buildtools.native", version.ref = "graalvm-native" }
 openapi-generator = { id = "org.openapi.generator", version.ref = "openapi-generator" }
+
+# Code style and coverage
+spotless = { id = "com.diffplug.spotless", version = "6.25.0" }
+jacoco = { id = "jacoco", version = "0.8.11" }

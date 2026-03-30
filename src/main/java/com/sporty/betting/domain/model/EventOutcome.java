@@ -11,7 +11,7 @@ import lombok.NoArgsConstructor;
 @AllArgsConstructor
 public class EventOutcome {
 
-    private String eventId;
-    private String eventName;
-    private String eventWinnerId;
+  private String eventId;
+  private String eventName;
+  private String eventWinnerId;
 }

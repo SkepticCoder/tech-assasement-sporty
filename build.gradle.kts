@@ -4,6 +4,8 @@ plugins {
     alias(libs.plugins.spring.dependency.management)
     alias(libs.plugins.graalvm.native)
     alias(libs.plugins.openapi.generator)
+    id("com.diffplug.spotless") version "6.25.0"
+    id("jacoco")
 }
 
 group = "com.sporty.betting"
@@ -19,6 +21,25 @@ repositories {
     mavenCentral()
 }
 
+spotless {
+    java {
+        googleJavaFormat()
+        target("src/**/*.java")
+    }
+}
+
+jacoco {
+    toolVersion = "0.8.11"
+}
+
+tasks.jacocoTestReport {
+    dependsOn(tasks.test)
+    reports {
+        xml.required.set(true)
+        html.required.set(true)
+    }
+}
+
 dependencies {
     // Spring Boot
     implementation(libs.spring.boot.starter.web)
@@ -28,6 +49,7 @@ dependencies {
 
     // Kafka
     implementation(libs.spring.kafka)
+    implementation("org.apache.kafka:kafka-streams")
 
     // RocketMQ (exclude lz4-java to resolve capability conflict with Kafka 4.x)
     implementation(libs.rocketmq.spring.boot.starter) {
@@ -48,6 +70,7 @@ dependencies {
     // Test
     testImplementation(libs.spring.boot.starter.test)
     testImplementation(libs.spring.boot.starter.webmvc.test)
+    testImplementation("org.springframework.boot:spring-boot-restclient")
     testImplementation(libs.spring.kafka.test)
     testImplementation(libs.testcontainers.core)
     testImplementation(libs.testcontainers.junit.jupiter)

@@ -4,7 +4,7 @@ import com.sporty.betting.domain.model.BetSettlement;
 
 public interface BetSettlementRocketProducer {
 
-    String TOPIC = "bet-settlements";
+  String TOPIC = "bet-settlements";
 
-    void send(BetSettlement settlement);
+  void send(BetSettlement settlement);
 }

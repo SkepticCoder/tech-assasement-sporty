@@ -7,19 +7,42 @@ spring:
 
   data:
     redis:
-      host: ${REDIS_HOST:localhost}
-      port: ${REDIS_PORT:6379}
+      host: ${REDIS_HOST}
+      port: ${REDIS_PORT}
 
   kafka:
-    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS}
     consumer:
       group-id: bet-settlement-group
     producer:
       transaction-id-prefix: bet-settlement-tx-
+    streams:
+      application-id: bet-settlement-streams-app
+      bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS}
+      properties:
+        default.key.serde: org.apache.kafka.common.serialization.Serdes$StringSerde
+        default.value.serde: org.springframework.kafka.support.serializer.JsonSerde
+        spring.json.trusted.packages: '*'
+      state-dir: /tmp/kafka-streams-state
+
+# Settlement Strategy Configuration
+# Supported strategies: REDIS (cache-based) or KAFKA_STREAMS (stream-based)
+settlement:
+  strategy: ${SETTLEMENT_STRATEGY}
+
+# Dead-Letter Queue Configuration
+dlq:
+  enabled: ${DLQ_ENABLED}
+  # Max retries before sending to DLQ
+  max-retries: ${DLQ_MAX_RETRIES}
+  # Monitoring
+  monitoring:
+    enabled: ${DLQ_MONITORING_ENABLED}
+    alert-enabled: ${DLQ_ALERT_ENABLED}
 
 rocketmq:
-  enabled: ${ROCKETMQ_ENABLED:true}
-  name-server: ${ROCKETMQ_NAME_SERVER:localhost:9876}
+  enabled: ${ROCKETMQ_ENABLED}
+  name-server: ${ROCKETMQ_NAME_SERVER}
   producer:
     group: bet-settlement-producer-group
 

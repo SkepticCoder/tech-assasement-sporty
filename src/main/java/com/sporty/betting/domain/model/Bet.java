@@ -1,5 +1,7 @@
 package com.sporty.betting.domain.model;
 
+import java.math.BigDecimal;
+import java.time.Instant;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
@@ -8,9 +10,6 @@ import org.springframework.data.annotation.Id;
 import org.springframework.data.redis.core.RedisHash;
 import org.springframework.data.redis.core.index.Indexed;
 
-import java.math.BigDecimal;
-import java.time.Instant;
-
 @Data
 @Builder
 @NoArgsConstructor
@@ -18,24 +17,21 @@ import java.time.Instant;
 @RedisHash("bet")
 public class Bet {
 
-    @Id
-    private String id;
+  @Id private String id;
 
-    private String userId;
+  private String userId;
 
-    @Indexed
-    private String eventId;
+  @Indexed private String eventId;
 
-    private String eventMarketId;
+  private String eventMarketId;
 
-    private String eventWinnerId;
+  private String eventWinnerId;
 
-    private BigDecimal betAmount;
+  private BigDecimal betAmount;
 
-    @Indexed
-    private BetStatus status;
+  @Indexed private BetStatus status;
 
-    private Instant createdAt;
+  private Instant createdAt;
 
-    private Instant settledAt;
+  private Instant settledAt;
 }

@@ -89,11 +89,27 @@ components:
         status:
           type: string
           description: Processing status
+          enum:
+            - ACCEPTED
+            - PROCESSING
+            - COMPLETED
+            - REJECTED
+            - FAILED
           example: ACCEPTED
         message:
           type: string
           description: Human-readable status message
           example: Event outcome published for settlement processing
+
+    EventOutcomeStatus:
+      type: string
+      enum:
+        - ACCEPTED
+        - PROCESSING
+        - COMPLETED
+        - REJECTED
+        - FAILED
+      description: Processing status for event outcomes
 
     ErrorResponse:
       type: object

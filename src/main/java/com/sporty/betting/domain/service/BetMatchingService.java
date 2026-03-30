@@ -4,5 +4,5 @@ import com.sporty.betting.domain.model.EventOutcome;
 
 public interface BetMatchingService {
 
-    void matchAndSettle(EventOutcome outcome);
+  void matchAndSettle(EventOutcome outcome);
 }

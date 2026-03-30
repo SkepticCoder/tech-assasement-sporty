@@ -4,5 +4,5 @@ import com.sporty.betting.domain.model.BetSettlement;
 
 public interface BetSettlementService {
 
-    void settle(BetSettlement settlement);
+  void settle(BetSettlement settlement);
 }

@@ -11,16 +11,17 @@ import org.springframework.stereotype.Component;
 @RequiredArgsConstructor
 public class EventOutcomeKafkaProducer implements EventOutcomeProducer {
 
-    public static final String TOPIC = "event-outcomes";
+  public static final String TOPIC = "event-outcomes";
 
-    private final KafkaTemplate<String, EventOutcome> kafkaTemplate;
+  private final KafkaTemplate<String, EventOutcome> kafkaTemplate;
 
-    @Override
-    public void send(EventOutcome outcome) {
-        kafkaTemplate.executeInTransaction(ops -> {
-            ops.send(TOPIC, outcome.getEventId(), outcome);
-            log.info("Published event outcome to Kafka: eventId={}", outcome.getEventId());
-            return true;
+  @Override
+  public void send(EventOutcome outcome) {
+    kafkaTemplate.executeInTransaction(
+        ops -> {
+          ops.send(TOPIC, outcome.getEventId(), outcome);
+          log.info("Published event outcome to Kafka: eventId={}", outcome.getEventId());
+          return true;
         });
-    }
+  }
 }
