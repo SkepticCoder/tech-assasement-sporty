@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: bet-settlement-config
+  namespace: default
+data:
+  KAFKA_BOOTSTRAP_SERVERS: "kafka:9092"
+  ROCKETMQ_NAME_SERVER: "rocketmq-namesrv:9876"
+  ROCKETMQ_ENABLED: "true"
+  REDIS_HOST: "redis"
+  REDIS_PORT: "6379"

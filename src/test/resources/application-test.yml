@@ -1,0 +1,36 @@
+spring:
+  data:
+    redis:
+      host: localhost
+      port: 6379
+
+  kafka:
+    bootstrap-servers: localhost:9092
+    streams:
+      application-id: bet-settlement-streams-test-app
+      bootstrap-servers: localhost:9092
+      properties:
+        default.key.serde: org.apache.kafka.common.serialization.Serdes$StringSerde
+        default.value.serde: org.springframework.kafka.support.serializer.JsonSerde
+        spring.json.trusted.packages: '*'
+      state-dir: /tmp/kafka-streams-state-test
+
+# Settlement Strategy Configuration for Tests
+settlement:
+  strategy: KAFKA_STREAMS
+
+# Dead-Letter Queue Configuration for Tests
+dlq:
+  enabled: true
+  max-retries: 3
+  monitoring:
+    enabled: true
+    alert-enabled: false
+
+rocketmq:
+  enabled: false
+  name-server: localhost:9876
+
+logging:
+  level:
+    com.sporty.betting: DEBUG

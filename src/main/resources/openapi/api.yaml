@@ -1,0 +1,127 @@
+openapi: 3.0.3
+info:
+  title: Bet Settlement Trigger Service API
+  version: 1.0.0
+  description: >
+    API for publishing sports event outcomes and triggering async bet settlement
+    via Kafka and RocketMQ.
+
+servers:
+  - url: http://localhost:8080
+    description: Local development
+
+paths:
+  /api/v1/event-outcomes:
+    post:
+      operationId: publishEventOutcome
+      summary: Publish event outcome
+      description: >
+        Publishes a sports event outcome to Kafka for asynchronous bet settlement.
+        Returns 202 Accepted immediately — settlement happens asynchronously.
+      tags:
+        - Event Outcomes
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EventOutcomeRequest'
+            example:
+              eventId: event-100
+              eventName: Champions League Final
+              eventWinnerId: team-a
+      responses:
+        '202':
+          description: Event outcome accepted for processing
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EventOutcomeResponse'
+              example:
+                eventId: event-100
+                status: ACCEPTED
+                message: Event outcome published for settlement processing
+        '400':
+          description: Invalid request body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+components:
+  schemas:
+    EventOutcomeRequest:
+      type: object
+      required:
+        - eventId
+        - eventName
+        - eventWinnerId
+      properties:
+        eventId:
+          type: string
+          minLength: 1
+          description: Unique identifier of the sports event
+          example: event-100
+        eventName:
+          type: string
+          minLength: 1
+          description: Human-readable name of the event
+          example: Champions League Final
+        eventWinnerId:
+          type: string
+          minLength: 1
+          description: Identifier of the winning team/participant
+          example: team-a
+
+    EventOutcomeResponse:
+      type: object
+      properties:
+        eventId:
+          type: string
+          description: The event ID that was accepted
+          example: event-100
+        status:
+          type: string
+          description: Processing status
+          enum:
+            - ACCEPTED
+            - PROCESSING
+            - COMPLETED
+            - REJECTED
+            - FAILED
+          example: ACCEPTED
+        message:
+          type: string
+          description: Human-readable status message
+          example: Event outcome published for settlement processing
+
+    EventOutcomeStatus:
+      type: string
+      enum:
+        - ACCEPTED
+        - PROCESSING
+        - COMPLETED
+        - REJECTED
+        - FAILED
+      description: Processing status for event outcomes
+
+    ErrorResponse:
+      type: object
+      properties:
+        timestamp:
+          type: string
+          format: date-time
+        status:
+          type: integer
+        error:
+          type: string
+        message:
+          type: string
+        path:
+          type: string

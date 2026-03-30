@@ -1,0 +1,158 @@
+@startuml C4_Context
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Context.puml
+
+title System Context Diagram - Bet Settlement Trigger Service
+
+Person(operator, "Operator", "Sports betting operator who publishes event outcomes")
+
+System(betSettlement, "Bet Settlement Trigger Service", "Handles sports event outcome publishing, bet matching, and settlement via Kafka & RocketMQ. Exactly-once semantics end-to-end.")
+
+System_Ext(kafka, "Apache Kafka", "Event streaming platform for event outcomes")
+System_Ext(rocketmq, "Apache RocketMQ", "Message queue for bet settlement commands")
+System_Ext(redis, "Redis", "In-memory data store for bets")
+
+Rel(operator, betSettlement, "Publishes event outcomes", "REST API / JSON")
+Rel(betSettlement, kafka, "Produces & Consumes event outcomes", "event-outcomes topic")
+Rel(betSettlement, rocketmq, "Produces & Consumes bet settlements", "bet-settlements topic")
+Rel(betSettlement, redis, "Reads/Writes bets", "Spring Data Redis")
+
+@enduml
+
+@startuml C4_Container
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Container.puml
+
+title Container Diagram - Bet Settlement Trigger Service
+
+Person(operator, "Operator", "Publishes event outcomes")
+
+System_Boundary(system, "Bet Settlement Trigger Service") {
+    Container(api, "REST API", "Spring Boot / Java 21", "Exposes endpoint to publish event outcomes. OpenAPI documented.")
+    Container(kafkaProducer, "Kafka Producer", "Spring Kafka (Transactional)", "Idempotent + transactional producer. Publishes event outcomes to Kafka.")
+    Container(kafkaConsumer, "Kafka Consumer", "Spring Kafka (read_committed)", "Consumes event outcomes. Manual offset commit after processing.")
+    Container(betMatcher, "Bet Matcher", "Spring Service", "Matches event outcomes to PENDING bets. Uses Redis WATCH/MULTI/EXEC CAS to transition PENDING -> SETTLING.")
+    Container(rocketProducer, "RocketMQ Producer", "TransactionMQProducer", "Transactional message: coordinates with Redis CAS. Message committed only if local state succeeds.")
+    Container(rocketConsumer, "RocketMQ Consumer", "RocketMQ Spring", "Idempotent consumer: settles bets SETTLING -> WON/LOST. Status guard prevents reprocessing.")
+    ContainerDb(db, "Redis", "In-Memory", "Stores bets as @RedisHash. Secondary index on eventId+status.")
+}
+
+System_Ext(kafka, "Apache Kafka", "event-outcomes topic")
+System_Ext(rocketmq, "Apache RocketMQ", "bet-settlements topic")
+
+Rel(operator, api, "POST /api/v1/event-outcomes", "JSON/HTTPS")
+Rel(api, kafkaProducer, "Delegates publishing")
+Rel(kafkaProducer, kafka, "Produces to event-outcomes\n(idempotent, transactional)")
+Rel(kafka, kafkaConsumer, "Consumes from event-outcomes\n(read_committed)")
+Rel(kafkaConsumer, betMatcher, "Triggers bet matching")
+Rel(betMatcher, db, "WATCH/MULTI/EXEC\nPENDING -> SETTLING (CAS)")
+Rel(betMatcher, rocketProducer, "Sends matched bets")
+Rel(rocketProducer, rocketmq, "Transactional message\nto bet-settlements")
+Rel(rocketmq, rocketConsumer, "Consumes from bet-settlements")
+Rel(rocketConsumer, db, "SETTLING -> WON/LOST\n(idempotent)")
+
+@enduml
+
+@startuml C4_Component
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Component.puml
+
+title Component Diagram - Bet Settlement Trigger Service
+
+Container_Boundary(api_layer, "API Layer") {
+    Component(eventOutcomeController, "EventOutcomeController", "@RestController", "POST /api/v1/event-outcomes")
+    Component(openApiConfig, "OpenAPI Config", "SpringDoc", "Swagger UI & API docs")
+}
+
+Container_Boundary(messaging_layer, "Messaging Layer") {
+    Component(kafkaEventProducer, "EventOutcomeKafkaProducer", "KafkaTemplate (transactional)", "Idempotent producer. Serializes and sends EventOutcome to Kafka within a transaction.")
+    Component(kafkaEventConsumer, "EventOutcomeKafkaConsumer", "@KafkaListener (read_committed)", "Consumes EventOutcome. Manual offset commit after successful processing.")
+    Component(rocketSettlementProducer, "BetSettlementRocketProducer", "TransactionMQProducer", "Sends transactional BetSettlement messages. LocalTransactionChecker verifies Redis state.")
+    Component(rocketSettlementConsumer, "BetSettlementRocketConsumer", "@RocketMQMessageListener", "Idempotent consumer. Status guard: only processes SETTLING bets.")
+}
+
+Container_Boundary(domain_layer, "Domain / Service Layer") {
+    Component(betMatchingService, "BetMatchingService", "Spring @Service", "Finds PENDING bets by eventId. Uses Redis CAS (WATCH/MULTI/EXEC) to atomically claim bets as SETTLING.")
+    Component(betSettlementService, "BetSettlementService", "Spring @Service", "Settles bets: compares eventWinnerId, transitions SETTLING -> WON/LOST. Idempotent — skips if not SETTLING.")
+    Component(eventOutcomeService, "EventOutcomeService", "Spring @Service", "Orchestrates event outcome publishing")
+}
+
+Container_Boundary(persistence_layer, "Persistence Layer") {
+    Component(betRepository, "BetRepository", "Spring Data Redis", "CrudRepository + findByEventIdAndStatus() via @Indexed secondary index")
+    Component(betEntity, "Bet Entity", "@RedisHash(bet)", "betId, userId, eventId, eventMarketId, eventWinnerId, betAmount, status, createdAt, settledAt")
+    ComponentDb(redisDb, "Redis", "In-Memory", "Stores bet hashes with secondary indexes")
+}
+
+Rel(eventOutcomeController, eventOutcomeService, "publishOutcome()")
+Rel(eventOutcomeService, kafkaEventProducer, "send(EventOutcome)")
+Rel(kafkaEventConsumer, betMatchingService, "matchBets(EventOutcome)")
+Rel(betMatchingService, betRepository, "findByEventIdAndStatus(eventId, PENDING)")
+Rel(betMatchingService, rocketSettlementProducer, "sendTransactional(BetSettlement)")
+Rel(rocketSettlementConsumer, betSettlementService, "settleBet(BetSettlement)")
+Rel(betSettlementService, betRepository, "CAS: SETTLING -> WON/LOST")
+Rel(betRepository, redisDb, "RedisTemplate / Lettuce")
+
+@enduml
+
+@startuml C4_Dynamic
+title Dynamic Diagram - Event Outcome to Bet Settlement Flow (Exactly-Once)
+
+participant "Operator" as op
+participant "EventOutcomeController" as ctrl
+participant "EventOutcomeService" as svc
+participant "KafkaProducer\n(idempotent+txn)" as kp
+participant "Kafka\n(event-outcomes)" as kafka
+participant "KafkaConsumer\n(read_committed)" as kc
+participant "BetMatchingService" as bms
+participant "Redis" as redis
+participant "RocketMQProducer\n(transactional)" as rp
+participant "RocketMQ\n(bet-settlements)" as rmq
+participant "RocketMQConsumer\n(idempotent)" as rc
+participant "BetSettlementService" as bss
+
+== Publish Event Outcome ==
+op -> ctrl: POST /api/v1/event-outcomes
+ctrl -> svc: publishOutcome(request)
+svc -> kp: send("event-outcomes", eventOutcome)
+note right of kp: Idempotent producer\nprevents duplicate\non retry
+kp -> kafka: produce (transactional)
+ctrl <-- svc: 202 Accepted
+
+== Consume & Match Bets ==
+kafka -> kc: consume (read_committed)
+kc -> bms: matchAndSettle(eventOutcome)
+bms -> redis: findByEventIdAndStatus(eventId, PENDING)
+redis --> bms: List<Bet>
+
+loop for each matched bet
+    == Exactly-Once CAS ==
+    bms -> redis: WATCH bet:{betId}
+    bms -> redis: MULTI
+    bms -> redis: HSET bet:{betId} status SETTLING
+    bms -> redis: EXEC
+    note right of redis: CAS succeeds only if\nno concurrent modification.\nLosing consumer gets nil.
+
+    alt CAS succeeded
+        bms -> rp: sendTransactional("bet-settlements", betSettlement)
+        note right of rp: PREPARED state.\nHalf-message in RocketMQ.
+        rp -> rmq: produce (transactional msg)
+        note right of rmq: Message invisible\nuntil COMMIT
+        rp -> rp: executeLocalTransaction() -> COMMIT
+        note right of rp: LocalTransactionChecker\ncan query Redis if\nCOMMIT/ROLLBACK lost
+    else CAS failed (bet already claimed)
+        note right of bms: Skip - another\nconsumer won the race
+    end
+end
+
+bms -> kc: processing complete
+kc -> kafka: commit offset (manual)
+
+== Settle Bets ==
+rmq -> rc: consume message
+rc -> bss: settle(betSettlement)
+bss -> redis: GET bet:{betId}.status
+alt status == SETTLING
+    bss -> redis: HSET status WON/LOST, settledAt now
+    note right of bss: Compare eventWinnerId\nwith predicted winnerId
+else status != SETTLING (already settled)
+    note right of bss: Idempotent skip.\nACK without reprocessing.
+end
+
+@enduml

@@ -1,0 +1,62 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: bet-settlement-service
+
+  data:
+    redis:
+      host: localhost
+      port: 6379
+
+  kafka:
+    bootstrap-servers: localhost:9092
+    consumer:
+      group-id: bet-settlement-group
+    producer:
+      transaction-id-prefix: bet-settlement-tx-
+    streams:
+      application-id: bet-settlement-streams-app
+      bootstrap-servers: localhost:9092
+      properties:
+        default.key.serde: org.apache.kafka.common.serialization.Serdes$StringSerde
+        default.value.serde: org.springframework.kafka.support.serializer.JsonSerde
+        spring.json.trusted.packages: '*'
+      state-dir: /tmp/kafka-streams-state
+
+# Settlement Strategy Configuration
+# Supported strategies: REDIS (cache-based) or KAFKA_STREAMS (stream-based)
+settlement:
+  strategy: REDIS
+
+# Dead-Letter Queue Configuration
+dlq:
+  enabled: true
+  # Max retries before sending to DLQ
+  max-retries: 3
+  # Monitoring
+  monitoring:
+    enabled: true
+    alert-enabled: true
+
+rocketmq:
+  enabled: false
+  name-server: localhost:9876
+  producer:
+    group: bet-settlement-producer-group
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      show-details: always
+
+springdoc:
+  api-docs:
+    path: /api-docs
+  swagger-ui:
+    path: /swagger-ui.html
